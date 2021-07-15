@@ -147,8 +147,7 @@ def retrieve_data(link_to_lm_lc):
         df = pd.DataFrame(columns=column_names, index=range(length))
 
         for i in range(len(parsed['results'])):
-            date_p = arrow.get(parsed['results'][i]['t']).datetime
-            df.loc[length - 1 - i]["Date"] = date_p
+            df.loc[length - 1 - i]["Date"] = arrow.get(parsed['results'][i]['t']).to('local').datetime
             df.loc[length - 1 - i]["Open"] = parsed['results'][i]['o']
             df.loc[length - 1 - i]["High"] = parsed['results'][i]['h']
             df.loc[length - 1 - i]["Low"] = parsed['results'][i]['l']
