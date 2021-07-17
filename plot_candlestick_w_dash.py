@@ -556,7 +556,11 @@ def update_graph(isin_input_value, button_previous, button_next, button_live, bu
             error_message = None
         # Plotly Express
         figure_line = px.line(df, x=df.index, y=["Open", "Close", "Low", "High"])
-
+        figure_line.update_layout(
+            title='Market Data',
+            yaxis_title='EUR',
+            xaxis_title='Local Date and Time',
+        )
         # Plotly Graph Objects
         figure_candlesticks = go.Figure(
             data=[
@@ -568,6 +572,11 @@ def update_graph(isin_input_value, button_previous, button_next, button_live, bu
                     close=df["Close"]
                 )
             ]
+        )
+        figure_candlesticks.update_layout(
+            title='Market Data',
+            yaxis_title='EUR',
+            xaxis_title='Local Date and Time',
         )
         # Retrieve a single Trading Venue instrument
         link_to_lm_instrument = f"https://paper.lemon.markets/rest/v1/trading-venues/{mic}/instruments/{isin}/"
@@ -595,6 +604,11 @@ def update_graph(isin_input_value, button_previous, button_next, button_live, bu
         df = generate_dummy_df()
         error_message = "No data available"
         figure_line = px.line(df, x=df.index, y=["Open", "Close", "Low", "High"])
+        figure_line.update_layout(
+            title='Market Data',
+            yaxis_title='EUR',
+            xaxis_title='Local Date and Time',
+        )
         figure_candlesticks = go.Figure(
             data=[
                 go.Candlestick(
@@ -606,7 +620,11 @@ def update_graph(isin_input_value, button_previous, button_next, button_live, bu
                 )
             ]
         )
-
+        figure_candlesticks.update_layout(
+            title='Market Data',
+            yaxis_title='EUR',
+            xaxis_title='Local Date and Time',
+        )
     button_color_live = off_button_style
     button_color_day = off_button_style
     button_color_week = off_button_style
