@@ -14,6 +14,7 @@ import pandas as pd
 
 import plotly.express as px
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 
 import dash
 import dash_core_components as dcc
@@ -60,7 +61,7 @@ on_button_style = {'backgroundColor': 'grey',
                    'margin': '10px 10px'}
 
 # external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css']
-style_sheet = ['./style_sheet.css']  # derived from stylesheet above
+style_sheet = ['./assets/style_sheet.css']  # derived from stylesheet above
 
 app = dash.Dash(__name__, external_stylesheets=style_sheet)
 
@@ -100,37 +101,92 @@ button_color_5_years = off_button_style
 button_color_all = off_button_style
 
 radio_buttons = ("Live", "1 Day", "1 Week", "1 Month", "4 Months", "1 Year", "5 Years", "All Time")
-radio_button_state = radio_buttons.index("1 Week")
+radio_button_state = radio_buttons.index("1 Month")
 
 time_step_selection = ("Minute", "Hour", "Day")
-time_step_state = time_step_selection.index("Hour")
+time_step_state = time_step_selection.index("Day")
 
-link_to_lm_until_datetime = datetime.datetime.today()  # just define type of variable
+link_to_lm_to_datetime = datetime.datetime.today()  # just define type of variable
 link_to_lm_from_datetime = datetime.datetime.today()  # just define type of variable
 
-# todo: should be 7 days
-NEARLY_7_DAYS = timedelta(days=6) + timedelta(hours=23) + timedelta(minutes=59) + timedelta(seconds=59)
-# todo: should be 31 days
-NEARLY_31_DAYS = timedelta(days=30) + timedelta(hours=23) + timedelta(minutes=59) + timedelta(seconds=59)
+start_time_offset = timedelta(days=0)  # just define type of variable
 
-time_frame = NEARLY_7_DAYS
-time_frame_all = NEARLY_7_DAYS
+DELTA_OF_1_DAY = timedelta(days=1)
+DELTA_OF_7_DAYS = timedelta(days=7)
+DELTA_OF_31_DAYS = timedelta(days=31)
+
+time_frame = DELTA_OF_7_DAYS
+time_frame_all = DELTA_OF_7_DAYS
 
 TIMER_INTERVAL = 30 * 1000  # in milliseconds = 30s
 TIMER_INTERVAL_LONG = 60 * 60 * 1000  # in milliseconds = 1 hour
 
 
-def retrieve_data(link_to_lm_lc):
-    request = requests.get(link_to_lm_lc, headers={"Authorization": authorization})
-    # example answer:
-    # "next": "https://paper.lemon.markets/rest/v1/trading-venues/XMUN/instruments/US67066G1040/data/ohlc/h1/?date_until=1627221990.191188&date_from=1624557795.095594",
-    # "previous": "https://paper.lemon.markets/rest/v1/trading-venues/XMUN/instruments/US67066G1040/data/ohlc/h1/?date_until=1621893600.0&date_from=1619229404.904406",
+def get_instrument_name_and_values(mic, isin):
+    link_to_lm_instrument = f"https://paper-data.lemon.markets/v1/instruments/?mic={mic}&isin={isin}"
+    result = requests.get(link_to_lm_instrument, headers={"Authorization": authorization})
+    log.info(result)
+    print(result)
+    if str(result) == "<Response [200]>":
+        log.info(result)
+        instrument = json.loads(result.content)
+        print("instrument =", instrument['results'][0]['title'])
+        log.info(json.dumps(instrument, indent=4, sort_keys=True))
 
-    log.debug(request)
+        instrument_output_name = instrument['results'][0]['title']
+        instrument_output_values = "ISIN: " + isin + "   " + \
+                                   "   WKN: " + instrument['results'][0]['wkn'] + "   Symbol: " + \
+                                   instrument['results'][0][
+                                       'symbol'] + "   Type: " + \
+                                   instrument['results'][0][
+                                       'type']
+        print("instrument_output_values  =", instrument_output_values)
+    elif str(result) == "<Response [401]>" or \
+            str(result) == "<Response [403]>" or \
+            str(result) == "<Response [404]>":
+        instrument_output_name = ""
+        instrument_output_values = ""
+        # time_step_output = ""
+        # time_range_str = ""
+        # sub_time_range_str = ""
+        df = generate_dummy_df()
+        # error_message = "Unauthorized"
+        figure_ohlc_line = build_figure_ohlc_line_dummy(df)
+
+        figure_candlesticks = go.Figure(
+            data=[
+                go.Candlestick(
+                    x=df.index,
+                    low=df["Low"],
+                    high=df["High"],
+                    open=df["Open"],
+                    close=df["Close"]
+                )
+            ]
+        )
+        figure_candlesticks.update_layout(
+            title='Market Data ' + instrument_output_name + "  " + instrument_output_values,
+            yaxis_title='EUR',
+            # xaxis_title='Local Date and Time',
+        )
+    else:
+        instrument_output_name = ""
+        instrument_output_values = ""
+
+    return instrument_output_name, instrument_output_values
+
+
+def retrieve_data(link_to_lm_lc):
+    print("in retrieve_data " + link_to_lm_lc)
+    result = requests.get(link_to_lm_lc, headers={"Authorization": authorization})
+    log.debug(result)
+
     df = pd.DataFrame()
-    parsed = json.loads(request.content)
-    if str(request) != "<Response [200]>":
-        log.error(json.dumps(parsed, indent=4, sort_keys=True))
+    parsed = json.loads(result.content)
+    print("parsed =", parsed)
+    print("Response =", str(result))
+    if str(result) != "<Response [200]>":
+        # log.error(json.dumps(parsed, indent=4, sort_keys=True))
         next_link_lc = None
         previous_link_lc = None
     else:
@@ -138,8 +194,12 @@ def retrieve_data(link_to_lm_lc):
         log.debug(json.dumps(parsed, indent=4, sort_keys=True))
         next_link_lc = parsed['next']
         previous_link_lc = parsed['previous']
-        log.info(next_link_lc)
-        log.info(previous_link_lc)
+        if previous_link_lc is None:
+            previous_link_lc = "None"
+        if next_link_lc is None:
+            next_link_lc = "None"
+        log.info('next: ' + next_link_lc)
+        log.info('previous: ' + previous_link_lc)
 
         length = len(parsed['results'])
 
@@ -147,13 +207,12 @@ def retrieve_data(link_to_lm_lc):
         df = pd.DataFrame(columns=column_names, index=range(length))
 
         for i in range(len(parsed['results'])):
-            df.loc[length - 1 - i]["Date"] = arrow.get(parsed['results'][i]['t']).to('local').datetime
-            df.loc[length - 1 - i]["Open"] = parsed['results'][i]['o']
-            df.loc[length - 1 - i]["High"] = parsed['results'][i]['h']
-            df.loc[length - 1 - i]["Low"] = parsed['results'][i]['l']
-            df.loc[length - 1 - i]["Close"] = parsed['results'][i]['c']
-            df.loc[length - 1 - i]["Volume"] = 0
-
+            df.loc[i]["Date"] = arrow.get(parsed['results'][i]['t']).to('local').datetime
+            df.loc[i]["Open"] = parsed['results'][i]['o']
+            df.loc[i]["High"] = parsed['results'][i]['h']
+            df.loc[i]["Low"] = parsed['results'][i]['l']
+            df.loc[i]["Close"] = parsed['results'][i]['c']
+            df.loc[i]["Volume"] = 0
         df.Date = pd.to_datetime(df.Date)
         df.Open = pd.to_numeric(df.Open)
         df.High = pd.to_numeric(df.High)
@@ -162,21 +221,23 @@ def retrieve_data(link_to_lm_lc):
         df.Volume = pd.to_numeric(df.Volume)
         df = df.set_index('Date')
         # log.debug("df = " + str(df))
-        # with pd.option_context('display.max_rows', None, 'display.max_columns', None):  # more options can be specified also
-        #     log.debug(df)
+        log.debug("len(df) =" + str(len(parsed['results'])))
+        with pd.option_context('display.max_rows', None, 'display.max_columns',
+                               None):  # more options can be specified also
+            log.debug(df)
         # log.debug("df.info() = " + str(df.info()))
     return df, next_link_lc, previous_link_lc
 
 
 def generate_dummy_df():
-    global link_to_lm_until_datetime, link_to_lm_from_datetime
+    global link_to_lm_to_datetime, link_to_lm_from_datetime
     column_names = ["Date", "Open", "High", "Low", "Close", "Volume"]
     df = pd.DataFrame(columns=column_names)
     df.Date = pd.to_datetime(df.Date)
     date_x = link_to_lm_from_datetime
-    date_x_end = link_to_lm_until_datetime
+    date_x_end = link_to_lm_to_datetime
     while date_x < date_x_end + timedelta(days=1):
-        df = df.append({'Date': date_x, 'Open': 0, 'High': 0, 'Low': 0, 'Close': 0, 'Volume': 0}, ignore_index=True)
+        df = df.append({'Date': date_x, 'Open': 1, 'High': 1, 'Low': 1, 'Close': 1, 'Volume': 0}, ignore_index=True)
         date_x = date_x + timedelta(days=1)
     df = df.set_index('Date')
     return df
@@ -196,17 +257,115 @@ def reset_all_cnt():
     return
 
 
+def build_figure_candlesticks(df):
+    figure_candlesticks = go.Figure(
+        data=[
+            go.Candlestick(
+                x=df.index,
+                low=df["Low"],
+                high=df["High"],
+                open=df["Open"],
+                close=df["Close"],
+                name='Candlesticks'
+            )
+        ]
+    )
+
+    figure_candlesticks.update_layout(hovermode="x unified")
+    figure_candlesticks.update_layout(
+        xaxis=go.layout.XAxis(
+            tickangle=-45)
+    )
+    instrument_output_name, instrument_output_values = get_instrument_name_and_values(mic, isin)
+    figure_candlesticks.update_layout(
+        title='Market Data: ' + instrument_output_name + "  " + instrument_output_values,
+        yaxis_title='EUR',
+        # xaxis_title='Local Date and Time',
+        # template='plotly_dark'
+    )
+    figure_candlesticks.update_layout(
+        xaxis_tickformat='%H:%M %A<br>%-d. %B %Y'
+    )
+    figure_candlesticks.update_yaxes(exponentformat="none", tickformat="5.2f")
+    # figure_candlesticks.for_each_trace(
+    #     lambda trace: trace.update(visible="legendonly") if trace.name != "Candlesticks" else (),
+    # )
+
+    return figure_candlesticks
+
+
+def build_figure_ohlc_line_dummy(df):
+    figure_ohlc_line = px.line(df, x=df.index, y=["Open", "High", "Low", "Close"])
+    # figure_ohlc_line.update_layout(
+    #     title='Market Data ' + instrument_output_name + "  " + instrument_output_values,
+    #     yaxis_title='EUR',
+    #     # xaxis_title='Local Date and Time',
+    # )
+    return figure_ohlc_line
+
+
+def build_figure_ohlc_line(df):
+    figure_ohlc_line = make_subplots(specs=[[{"secondary_y": True}]])
+    figure_ohlc_line.add_trace(go.Scatter(
+        x=df.index, y=df["Open"], name="Open",
+        connectgaps=True), secondary_y=False)
+    figure_ohlc_line.add_trace(go.Scatter(
+        x=df.index, y=df["High"], name="High",
+        connectgaps=True), secondary_y=False)
+    figure_ohlc_line.add_trace(go.Scatter(
+        x=df.index, y=df["Low"], name="Low",
+        connectgaps=True), secondary_y=False)
+    figure_ohlc_line.add_trace(go.Scatter(
+        x=df.index, y=df["Close"], name="Close",
+        connectgaps=True), secondary_y=False)
+    instrument_output_name, instrument_output_values = get_instrument_name_and_values(mic, isin)
+    figure_ohlc_line.update_layout(hovermode="x unified")
+    figure_ohlc_line.update_layout(
+        xaxis=go.layout.XAxis(
+            tickangle=-45)
+    )
+    figure_ohlc_line.update_layout(
+        xaxis_tickformat='%H:%M %A<br>%-d. %B %Y'
+    )
+    figure_ohlc_line.update_layout(
+        title='Market Data: ' + instrument_output_name + "  " + instrument_output_values,
+        yaxis_title='EUR',
+        xaxis_title='Local Date and Time',
+        legend_title_text='OHLC'
+    )
+    figure_ohlc_line.update_layout(
+        legend=dict(
+            x=0,
+            y=1,
+            traceorder="reversed",
+            title_font_family="Arial",
+            font=dict(
+                family="Arial",
+                size=12,
+                color="black"
+            ),
+            bgcolor="White",
+            bordercolor="Black",
+            borderwidth=1
+        )
+    )
+    figure_ohlc_line.update_yaxes(exponentformat="none", tickformat="5.2f")
+
+    return figure_ohlc_line
+
+
 def set_radio_button_state(button_live, button_day, button_week, button_month, button_4_months,
                            button_year, button_5_years, button_all):
     global button_live_cnt, button_day_cnt, button_week_cnt, button_month_cnt, button_4_months_cnt, button_year_cnt, \
         button_5_years_cnt, button_all_cnt
-    global NEARLY_7_DAYS, NEARLY_31_DAYS
-    global radio_button_state
+    global DELTA_OF_7_DAYS, DELTA_OF_31_DAYS
+    global radio_button_state, start_time_offset
 
     if button_live != button_live_cnt:
         if button_live > button_live_cnt:
             radio_button_state = radio_buttons.index('Live')
             button_live_cnt = button_live
+            start_time_offset = timedelta(days=0)
         else:
             reset_all_cnt()
     elif button_day != button_day_cnt:
@@ -255,53 +414,67 @@ def set_radio_button_state(button_live, button_day, button_week, button_month, b
 
 
 def set_time_frame_all():
-    global NEARLY_7_DAYS, NEARLY_31_DAYS
+    global DELTA_OF_7_DAYS, DELTA_OF_31_DAYS
     global radio_button_state, time_step_state, time_step_selection
 
     if radio_button_state == radio_buttons.index('Live'):
-        time_frame_all_lc = timedelta(minutes=3*60)
-        time_frame_lc = timedelta(minutes=3*60)
+        time_frame_all_lc = timedelta(minutes=4 * 60)
+        time_frame_lc = timedelta(minutes=4 * 60)
     elif radio_button_state == radio_buttons.index('1 Day'):
-        time_frame_all_lc = timedelta(days=1)
-        time_frame_lc = timedelta(days=1)
+        time_frame_all_lc = DELTA_OF_1_DAY
+        time_frame_lc = DELTA_OF_1_DAY
     elif radio_button_state == radio_buttons.index('1 Week'):
-        time_frame_all_lc = NEARLY_7_DAYS
-        time_frame_lc = NEARLY_7_DAYS
-    elif radio_button_state == radio_buttons.index('1 Month'):
-        time_frame_all_lc = NEARLY_31_DAYS
+        time_frame_all_lc = DELTA_OF_7_DAYS
         if time_step_state == time_step_selection.index("Minute"):
-            time_frame_lc = NEARLY_7_DAYS
+            time_frame_lc = DELTA_OF_1_DAY
         else:
-            time_frame_lc = NEARLY_31_DAYS
+            time_frame_lc = DELTA_OF_7_DAYS
+    elif radio_button_state == radio_buttons.index('1 Month'):
+        time_frame_all_lc = DELTA_OF_31_DAYS
+        if time_step_state == time_step_selection.index("Minute"):
+            time_frame_lc = DELTA_OF_1_DAY
+        elif time_step_state == time_step_selection.index("Hour"):
+            time_frame_lc = DELTA_OF_7_DAYS
+        else:
+            time_frame_lc = DELTA_OF_31_DAYS
     elif radio_button_state == radio_buttons.index('4 Months'):
         time_frame_all_lc = timedelta(days=122)
         if time_step_state == time_step_selection.index("Minute"):
-            time_frame_lc = NEARLY_7_DAYS
+            time_frame_lc = DELTA_OF_1_DAY
+        elif time_step_state == time_step_selection.index("Hour"):
+            time_frame_lc = DELTA_OF_7_DAYS
         else:
-            time_frame_lc = NEARLY_31_DAYS
+            time_frame_lc = DELTA_OF_31_DAYS
     elif radio_button_state == radio_buttons.index('1 Year'):
         time_frame_all_lc = timedelta(days=366)
         if time_step_state == time_step_selection.index("Minute"):
-            time_frame_lc = NEARLY_7_DAYS
+            time_frame_lc = DELTA_OF_1_DAY
+        elif time_step_state == time_step_selection.index("Hour"):
+            time_frame_lc = DELTA_OF_7_DAYS
         else:
-            time_frame_lc = NEARLY_31_DAYS
+            time_frame_lc = DELTA_OF_31_DAYS
     elif radio_button_state == radio_buttons.index('5 Years'):
         time_frame_all_lc = timedelta(days=4 * 365 + 367)
         if time_step_state == time_step_selection.index("Minute"):
-            time_frame_lc = NEARLY_7_DAYS
+            time_frame_lc = DELTA_OF_1_DAY
+        elif time_step_state == time_step_selection.index("Hour"):
+            time_frame_lc = DELTA_OF_7_DAYS
         else:
-            time_frame_lc = NEARLY_31_DAYS
+            time_frame_lc = DELTA_OF_31_DAYS
     elif radio_button_state == radio_buttons.index('All Time'):
         time_frame_all_lc = timedelta(days=35 * 366)
         if time_step_state == time_step_selection.index("Minute"):
-            time_frame_lc = NEARLY_7_DAYS
+            time_frame_lc = DELTA_OF_1_DAY
+        elif time_step_state == time_step_selection.index("Hour"):
+            time_frame_lc = DELTA_OF_7_DAYS
         else:
-            time_frame_lc = NEARLY_31_DAYS
+            time_frame_lc = DELTA_OF_31_DAYS
     else:
         time_frame_all_lc = None
         time_frame_lc = None
 
     return time_frame_all_lc, time_frame_lc
+
 
 # Open a new browser tab:Dash is running on http://127.0.0.1:8050/
 
@@ -313,7 +486,7 @@ def serve_layout():
     global radio_button_state
     log.debug("serve_layout()")
     layout_part_1 = [
-        html.H1("Stock Charts", style={'textAlign': 'center'}),
+        html.H1("Market Data", style={'textAlign': 'center', 'fontWeight': 'bold'}),
         html.H2("(For demonstration purpose with a single user sessions only !)", style={'textAlign': 'center'}),
         html.H6("Change the value in the text box to set the ISIN"),
         html.Div(["ISIN: ",
@@ -366,9 +539,9 @@ def serve_layout():
         html.Button('All', id='button_all', style={'fontSize': '16px', 'borderRadius': '15px',
                                                    'margin': '8px 10px', 'border': 'solid'}, n_clicks=0),
         html.Br(),
-        dcc.Graph(id='my_stock_chart_2', figure={}),
-        dcc.Graph(id='my_stock_chart_1', figure={})]
-    if radio_button_state == 0:  # = Live
+        dcc.Graph(id='my_stock_chart_candlestick', figure={}, style={'width': '100vw', 'height': '90vh'}),
+        dcc.Graph(id='my_stock_chart_ohlc_line', figure={}, style={'width': '100vw', 'height': '90vh'})]
+    if radio_button_state == 0 or radio_button_state == 1:  # = Live or Day
         layout_part_1.append(
             dcc.Interval(
                 id='interval-component',
@@ -382,7 +555,7 @@ def serve_layout():
                 interval=TIMER_INTERVAL_LONG,  # in milliseconds
                 n_intervals=0
             ))
-    my_layout = html.Div(layout_part_1, style={'backgroundColor': colors['background']})
+    my_layout = html.Div(layout_part_1, style={'backgroundColor': colors['background'], 'height': '100vh'})
     return my_layout
 
 
@@ -395,8 +568,8 @@ app.layout = serve_layout
     [Output(component_id='instrument_output_name_id', component_property='children'),
      Output(component_id='instrument_output_values_id', component_property='children'),
      Output(component_id='time_step_output', component_property='children'),
-     Output(component_id='my_stock_chart_1', component_property='figure'),
-     Output(component_id='my_stock_chart_2', component_property='figure'),
+     Output(component_id='my_stock_chart_ohlc_line', component_property='figure'),
+     Output(component_id='my_stock_chart_candlestick', component_property='figure'),
      Output(component_id='output_total_time_range_button', component_property='children'),
      Output(component_id='output_time_range_button', component_property='children'),
      Output(component_id='output_error_message', component_property='children'),
@@ -425,12 +598,13 @@ app.layout = serve_layout
 def update_graph(isin_input_value, button_previous, button_next, button_live, button_day, button_week, button_month,
                  button_4_month,
                  button_year, button_5_year, button_all, option_selected, n_timer):
-    global link_to_lm, link_to_lm_until_datetime, link_to_lm_from_datetime, time_frame_all, time_frame
+    global link_to_lm, link_to_lm_to_datetime, link_to_lm_from_datetime, time_frame_all, time_frame
     global button_previous_cnt, button_next_cnt
     global previous_link, next_link
     global button_color_live, button_color_day, button_color_week, button_color_month, button_color_4_months, \
         button_color_year, button_color_5_years, button_color_all
     global time_step_state, n_timer_cnt, isin
+    global start_time_offset
 
     # serve_layout()
     df = pd.DataFrame()
@@ -443,6 +617,9 @@ def update_graph(isin_input_value, button_previous, button_next, button_live, bu
         isin = isin_input_value.strip()
     if isin != "":
         log.info("isin = [" + isin + "]")
+
+        instrument_output_name, instrument_output_values = get_instrument_name_and_values(mic, isin)
+
         time_step_output = ""
 
         start_time_begin = datetime.datetime.today()  # just define type of variable
@@ -470,82 +647,125 @@ def update_graph(isin_input_value, button_previous, button_next, button_live, bu
             time_step = "d1"
         else:
             time_step = None
+            time_step_y = None
+
+        set_radio_button_state(button_live, button_day, button_week, button_month,
+                               button_4_month, button_year, button_5_year, button_all)
+        time_frame_all, time_frame = set_time_frame_all()
 
         if button_previous != button_previous_cnt:
             if button_previous > button_previous_cnt:
                 button_previous_cnt = button_previous
-                link_to_lm = previous_link
-                df, next_link, previous_link = retrieve_data(link_to_lm)
+                start_time_offset = start_time_offset - time_frame_all
             else:
                 button_previous_cnt = 0
         elif button_next != button_next_cnt:
             if button_next > button_next_cnt:
                 button_next_cnt = button_next
-                link_to_lm = next_link
-                df, next_link, previous_link = retrieve_data(link_to_lm)
+                start_time_offset = start_time_offset + time_frame_all
             else:
                 button_next_cnt = 0
-        else:
-            set_radio_button_state(button_live, button_day, button_week, button_month,
-                                   button_4_month, button_year, button_5_year, button_all)
-            time_frame_all, time_frame = set_time_frame_all()
 
-            log.info("time_frame = " + str(time_frame))
-            log.info("time_frame_all = " + str(time_frame_all))
-            time_step_output = "The time step chosen by user was: {}, ".format(option_selected) + \
-                               " for  " + radio_buttons[radio_button_state] + " with sub-time range " + str(time_frame)
-            log.info("option_selected = " + str(option_selected))
 
-            datetime_today = datetime.datetime.today()
-            start_time = datetime_today - time_frame_all
 
-            # Do no request old data which arw not available
-            if start_time < datetime.datetime(2021, 4, 1, 0, 0):
-                start_time = datetime.datetime(2021, 4, 1, 0, 0)
 
-            start_time_str = str((time.mktime(start_time.timetuple())))
-            start_time_begin = start_time
 
-            datetime_x = start_time
-            end_time = datetime_x + time_frame
+        log.info("time_frame = " + str(time_frame))
+        log.info("time_frame_all = " + str(time_frame_all))
+        log.info("start_time_offset = " + str(start_time_offset))
+        time_step_output = "The time step chosen by user was: {}, ".format(option_selected) + \
+                           " for  " + radio_buttons[radio_button_state] + " with sub-time range " + str(time_frame)
+        log.info("option_selected = " + str(option_selected))
 
+        datetime_today = datetime.datetime.today()
+        start_time = datetime_today - time_frame_all + start_time_offset
+
+        # Do no request old data which are not available
+        if start_time < datetime.datetime(2021, 8, 1, 0, 0):
+            start_time = datetime.datetime(2021, 8, 1, 0, 0)
+        # Do no request  data from the future
+        if start_time > datetime_today:
+            start_time = datetime_today
+        start_time_str = str(int((time.mktime(start_time.timetuple())) * 1000))
+        start_time_begin = start_time
+
+        datetime_x = start_time
+        end_time = datetime_x + time_frame
+
+        # Do no request  data from the future
+        if end_time > datetime_today:
+            end_time = datetime_today
+
+        end_time_str = str(int((time.mktime(end_time.timetuple())) * 1000))
+        log.debug("start_time:" + str(start_time) + " === " + "      end_time:" + str(end_time))
+        link_to_lm = f"https://paper-data.lemon.markets/v1/ohlc/{time_step}/?mic={mic}&isin={isin}&to={end_time_str}&from={start_time_str}&epoch=True"
+
+        end_time_all = start_time + time_frame_all + start_time_offset
+        # Do no request  data from the future
+        if end_time_all > datetime_today:
+            end_time_all = datetime_today
+
+        df, next_link, previous_link = retrieve_data(link_to_lm)
+        log.debug("my link_to_lm =" + link_to_lm)
+        log.debug(str(datetime_x) + " ### " + str(datetime_today))
+        while (datetime_x + time_frame) < end_time_all:
+            log.debug("datetime_x:" + str(datetime_x) + " ### " + "datetime_today:" + str(datetime_today))
+            datetime_x = datetime_x + time_frame
             # Do no request  data from the future
+            if datetime_x > datetime_today:
+                datetime_x = datetime_today
+            start_time = datetime_x
+            start_time_str = str(int((time.mktime(start_time.timetuple())) * 1000))
+            end_time = start_time + time_frame
             if end_time > datetime_today:
                 end_time = datetime_today
-
-            end_time_str = str((time.mktime(end_time.timetuple())))
-            link_to_lm = f"https://paper.lemon.markets/rest/v1/trading-venues/{mic}/instruments/{isin}/data/ohlc/{time_step}/?date_until={end_time_str}&date_from={start_time_str}"
-            log.debug("first link_to_lm =" + link_to_lm)
-            df, next_link, previous_link = retrieve_data(link_to_lm)
-            log.debug(str(datetime_x) + " ### " + str(datetime_today))
-            while (datetime_x + time_frame) < datetime_today:
-                log.debug(str(datetime_x) + " ### " + str(datetime_today))
-                datetime_x = datetime_x + time_frame
-                start_time = datetime_x
-                start_time_str = str((time.mktime(start_time.timetuple())))
-                end_time = start_time + time_frame
-                # Do no request  data from the future
-                if end_time > datetime_today:
-                    end_time = datetime_today
-                end_time_str = str((time.mktime(end_time.timetuple())))
-                log.debug(str(start_time) + " === " + str(end_time))
-                link_to_lm = f"https://paper.lemon.markets/rest/v1/trading-venues/{mic}/instruments/{isin}/data/ohlc/{time_step}/?date_until={end_time_str}&date_from={start_time_str}"
-                log.debug("second link_to_lm =" + link_to_lm)
+            end_time_str = str(int((time.mktime(end_time.timetuple())) * 1000))
+            log.debug("start_time:" + str(start_time) + " === " + "      end_time:" + str(end_time))
+            link_to_lm = f"https://paper-data.lemon.markets/v1/ohlc/{time_step}/?mic={mic}&isin={isin}&to={end_time_str}&from={start_time_str}&epoch=True"
+            log.debug("second link_to_lm =" + link_to_lm)
+            ddf, next_link, previous_link = retrieve_data(link_to_lm)
+            print("next_link = ", next_link)
+            print("type(next_link) = ", type(next_link))
+            df = df.append(ddf)
+            while next_link != "None":
+                next_link_to_from = next_link.split("&")
+                print("next_link_to_from =", next_link_to_from)
+                next_link_to = next_link_to_from[2].split("=", 1)
+                print("next_link_to =", next_link_to)
+                print("float(next_link_to[1]) =", float(next_link_to[1]))
+                next_link_to_to_datetime = datetime.datetime.fromtimestamp(float(next_link_to[1]) / 1000)
+                print("next_link_to_to_datetime =", next_link_to_to_datetime)
+                next_link_from = next_link_to_from[3].split("=", 1)
+                print("next_link_from =", next_link_from)
+                next_link_from_datetime = datetime.datetime.fromtimestamp(float(next_link_from[1]) / 1000)
+                print("next_link_from_datetime =", next_link_from_datetime)
+                link_to_lm = next_link
                 ddf, next_link, previous_link = retrieve_data(link_to_lm)
+                print("next_link = ", next_link)
+                print("type(next_link) = ", type(next_link))
                 df = df.append(ddf)
-
-        # with pd.option_context('display.max_rows', None, 'display.max_columns', None):  # more options can be specified also
-        #     log.info(df)
+        # print complete data set
+        with pd.option_context('display.max_rows', None, 'display.max_columns',
+                               None):  # more options can be specified also
+            log.info(df)
         # Calculate until and from-time from url-link
-        #  https://paper.lemon.markets/rest/v1/trading-venues/XMUN/instruments/US67066G1040/data/ohlc/h1/?date_until=1622464762.0&date_from=1619786362.672001
-        link_to_lm_until_from = link_to_lm.split("=", 2)
-        link_to_lm_until = link_to_lm_until_from[1].split("&", 1)
-        link_to_lm_until_datetime = datetime.datetime.fromtimestamp(float(link_to_lm_until[0]))
-        link_to_lm_from_str = link_to_lm.split("=", 2)
-        link_to_lm_from_datetime = datetime.datetime.fromtimestamp(float(link_to_lm_from_str[2]))
-
+        print("link_to_lm =", link_to_lm)
+        link_to_lm_to_from = link_to_lm.split("&")
+        print("link_to_lm_to_from =", link_to_lm_to_from)
+        link_to_lm_to = link_to_lm_to_from[2].split("=", 1)
+        print("link_to_lm_to =", link_to_lm_to)
+        print("float(link_to_lm_to[1]) =", float(link_to_lm_to[1]))
+        # if p_or_n_button == True:
+        link_to_lm_to_datetime = datetime.datetime.fromtimestamp(float(link_to_lm_to[1]) / 1000)
+        # else:
+        #     link_to_lm_to_datetime = datetime.datetime.fromtimestamp(float(link_to_lm_to[1]))
+        print("link_to_lm_to_datetime =", link_to_lm_to_datetime)
+        link_to_lm_from = link_to_lm_to_from[3].split("=", 1)
+        print("link_to_lm_from =", link_to_lm_from)
+        link_to_lm_from_datetime = datetime.datetime.fromtimestamp(float(link_to_lm_from[1]) / 1000)
+        print("link_to_lm_from_datetime =", link_to_lm_from_datetime)
         sub_time_range_str = "The last used sub-time range: " + link_to_lm_from_datetime.strftime(
-            "%d-%b-%Y (%H:%M:%S) - ") + link_to_lm_until_datetime.strftime("%d-%b-%Y (%H:%M:%S)")
+            "%d-%b-%Y (%H:%M:%S) - ") + link_to_lm_to_datetime.strftime("%d-%b-%Y (%H:%M:%S)")
 
         time_range_str = "The last used total-time range:  " + start_time_begin.strftime(
             "%d-%b-%Y (%H:%M:%S) - ") + end_time.strftime("%d-%b-%Y (%H:%M:%S)")
@@ -553,48 +773,13 @@ def update_graph(isin_input_value, button_previous, button_next, button_live, bu
             df = generate_dummy_df()
             error_message = "No data available for this time frame"
         else:
+            print(df)
             error_message = None
-        # Plotly Express
-        figure_line = px.line(df, x=df.index, y=["Open", "Close", "Low", "High"])
-        figure_line.update_layout(
-            title='Market Data',
-            yaxis_title='EUR',
-            xaxis_title='Local Date and Time',
-        )
-        # Plotly Graph Objects
-        figure_candlesticks = go.Figure(
-            data=[
-                go.Candlestick(
-                    x=df.index,
-                    low=df["Low"],
-                    high=df["High"],
-                    open=df["Open"],
-                    close=df["Close"]
-                )
-            ]
-        )
-        figure_candlesticks.update_layout(
-            title='Market Data',
-            yaxis_title='EUR',
-            xaxis_title='Local Date and Time',
-        )
-        # Retrieve a single Trading Venue instrument
-        link_to_lm_instrument = f"https://paper.lemon.markets/rest/v1/trading-venues/{mic}/instruments/{isin}/"
-        request = requests.get(link_to_lm_instrument, headers={"Authorization": authorization})
-        # log.info(request)
-        if str(request) == "<Response [200]>":
-            # log.info(request)
-            instrument = json.loads(request.content)
-            # log.info(json.dumps(instrument, indent=4, sort_keys=True))
 
-            instrument_output_name = instrument['title']
-            instrument_output_values = "ISIN: " + isin + "   " + \
-                                       "   WKN: " + instrument['wkn'] + "   Symbol: " + instrument['symbol'] + "   Type: " + \
-                                       instrument[
-                                           'type']
-        else:
-            instrument_output_name = ""
-            instrument_output_values = ""
+        figure_candlesticks = build_figure_candlesticks(df)
+        figure_ohlc_line = build_figure_ohlc_line(df)
+        # Plotly Graph Objects
+
     else:
         instrument_output_name = ""
         instrument_output_values = ""
@@ -603,11 +788,11 @@ def update_graph(isin_input_value, button_previous, button_next, button_live, bu
         sub_time_range_str = ""
         df = generate_dummy_df()
         error_message = "No data available"
-        figure_line = px.line(df, x=df.index, y=["Open", "Close", "Low", "High"])
-        figure_line.update_layout(
-            title='Market Data',
+        figure_ohlc_line = px.line(df, x=df.index, y=["Open", "Close", "Low", "High"])
+        figure_ohlc_line.update_layout(
+            title='Market Data: ' + instrument_output_name + "  " + instrument_output_values,
             yaxis_title='EUR',
-            xaxis_title='Local Date and Time',
+            # xaxis_title='Local Date and Time',
         )
         figure_candlesticks = go.Figure(
             data=[
@@ -621,10 +806,27 @@ def update_graph(isin_input_value, button_previous, button_next, button_live, bu
             ]
         )
         figure_candlesticks.update_layout(
-            title='Market Data',
+            title='Market Data: ' + instrument_output_name + "  " + instrument_output_values,
             yaxis_title='EUR',
-            xaxis_title='Local Date and Time',
+            # xaxis_title='Local Date and Time',
         )
+        figure_ohlc_line.update_layout(
+            legend=dict(
+                x=0,
+                y=1,
+                traceorder="reversed",
+                title_font_family="Arial",
+                font=dict(
+                    family="Arial",
+                    size=12,
+                    color="black"
+                ),
+                bgcolor="White",
+                bordercolor="Black",
+                borderwidth=1
+            )
+        )
+
     button_color_live = off_button_style
     button_color_day = off_button_style
     button_color_week = off_button_style
@@ -653,7 +855,7 @@ def update_graph(isin_input_value, button_previous, button_next, button_live, bu
         button_color_all = on_button_style
 
     return '{}'.format(instrument_output_name), '{}'.format(instrument_output_values), \
-           time_step_output, figure_line, figure_candlesticks, time_range_str, sub_time_range_str, \
+           time_step_output, figure_ohlc_line, figure_candlesticks, time_range_str, sub_time_range_str, \
            error_message, button_color_live, button_color_day, button_color_week, button_color_month, button_color_4_months, \
            button_color_year, button_color_5_years, button_color_all
 
@@ -662,7 +864,7 @@ def update_graph(isin_input_value, button_previous, button_next, button_live, bu
 
 if __name__ == '__main__':
     log.info("here is __main__")
-    app.run_server(debug=True)
+    app.run_server(debug=True, port=8050)
 
 # Dash is running on http://127.0.0.1:8050/
 #
