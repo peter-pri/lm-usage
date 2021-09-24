@@ -706,6 +706,23 @@ def update_graph(isin_input_value, button_previous, button_next, button_live, bu
             end_time_all = datetime_today
 
         df, next_link, previous_link = retrieve_data(link_to_lm)
+        while next_link != "None":
+            next_link_to_from = next_link.split("&")
+            print("next_link_to_from =", next_link_to_from)
+            next_link_to = next_link_to_from[2].split("=", 1)
+            print("next_link_to =", next_link_to)
+            print("float(next_link_to[1]) =", float(next_link_to[1]))
+            next_link_to_to_datetime = datetime.datetime.fromtimestamp(float(next_link_to[1]) / 1000)
+            print("next_link_to_to_datetime =", next_link_to_to_datetime)
+            next_link_from = next_link_to_from[3].split("=", 1)
+            print("next_link_from =", next_link_from)
+            next_link_from_datetime = datetime.datetime.fromtimestamp(float(next_link_from[1]) / 1000)
+            print("next_link_from_datetime =", next_link_from_datetime)
+            link_to_lm = next_link
+            ddf, next_link, previous_link = retrieve_data(link_to_lm)
+            print("next_link = ", next_link)
+            print("type(next_link) = ", type(next_link))
+            df = df.append(ddf)
         log.debug("my link_to_lm =" + link_to_lm)
         log.debug(str(datetime_x) + " ### " + str(datetime_today))
         while (datetime_x + time_frame) < end_time_all:
