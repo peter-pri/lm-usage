@@ -60,6 +60,26 @@ on_button_style = {'backgroundColor': 'grey',
                    'fontSize': '21px',
                    'margin': '10px 10px'}
 
+off_button_style_refresh = {'backgroundColor': 'white',
+                            'color': 'black',
+                            'height': '50px',
+                            'width': '150px',
+                            'marginTop': '20px',
+                            'marginLeft': '10px',
+                            'borderRadius': '8px',
+                            'fontSize': '12px',
+                            'margin': '5px 5px'}
+
+on_button_style_refresh = {'backgroundColor': 'grey',
+                           'color': 'white',
+                           'height': '50px',
+                           'width': '150px',
+                           'marginTop': '20px',
+                           'marginLeft': '10px',
+                           'borderRadius': '8px',
+                           'fontSize': '12px',
+                           'margin': '5px 5px'}
+
 # external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css']
 style_sheet = ['./assets/style_sheet.css']  # derived from stylesheet above
 
@@ -81,6 +101,9 @@ button_previous_cnt = 0
 button_next_cnt = 0
 
 n_timer_cnt = 0
+
+auto_refresh_cnt = 0
+auto_refresh_on = False
 
 button_live_cnt = 0
 button_day_cnt = 0
@@ -519,7 +542,8 @@ def serve_layout():
         html.Div(id='output_error_message',
                  children='No Error', style={'textAlign': 'left', 'color': 'red', 'backgroundColor': 'white'}),
         html.Br(),
-        html.A(html.Button('Auto Refresh on/off'), href='/'),
+        html.A(html.Button('Auto Refresh', id='button_auto_refresh',
+                           style=off_button_style_refresh, n_clicks=0), href='/'),
         html.Button('Live', id='button_live', style={'fontSize': '21px', 'borderRadius': '15px',
                                                      'margin': '8px 10px', 'border': 'solid'}, n_clicks=0),
         html.Button('Day', id='button_day', style={'fontSize': '21px', 'borderRadius': '15px',
@@ -541,7 +565,7 @@ def serve_layout():
         html.Br(),
         dcc.Graph(id='my_stock_chart_candlestick', figure={}, style={'width': '100vw', 'height': '90vh'}),
         dcc.Graph(id='my_stock_chart_ohlc_line', figure={}, style={'width': '100vw', 'height': '90vh'})]
-    if radio_button_state == 0 or radio_button_state == 1:  # = Live or Day
+    if (radio_button_state == 0 or radio_button_state == 1) and auto_refresh_on:  # = Live or Day
         layout_part_1.append(
             dcc.Interval(
                 id='interval-component',
@@ -573,6 +597,7 @@ app.layout = serve_layout
      Output(component_id='output_total_time_range_button', component_property='children'),
      Output(component_id='output_time_range_button', component_property='children'),
      Output(component_id='output_error_message', component_property='children'),
+     Output(component_id='button_auto_refresh', component_property='style'),
      Output(component_id='button_live', component_property='style'),
      Output(component_id='button_day', component_property='style'),
      Output(component_id='button_week', component_property='style'),
@@ -584,6 +609,7 @@ app.layout = serve_layout
     [Input(component_id='isin-input', component_property='value'),
      Input(component_id='button_previous', component_property='n_clicks'),
      Input(component_id='button_next', component_property='n_clicks'),
+     Input(component_id='button_auto_refresh', component_property='n_clicks'),
      Input(component_id='button_live', component_property='n_clicks'),
      Input(component_id='button_day', component_property='n_clicks'),
      Input(component_id='button_week', component_property='n_clicks'),
@@ -595,7 +621,8 @@ app.layout = serve_layout
      Input(component_id='select_time_step', component_property='value'),
      Input(component_id='interval-component', component_property='n_intervals')]
 )
-def update_graph(isin_input_value, button_previous, button_next, button_live, button_day, button_week, button_month,
+def update_graph(isin_input_value, button_previous, button_next, button_auto_refresh, button_live, button_day,
+                 button_week, button_month,
                  button_4_month,
                  button_year, button_5_year, button_all, option_selected, n_timer):
     global link_to_lm, link_to_lm_to_datetime, link_to_lm_from_datetime, time_frame_all, time_frame
@@ -605,6 +632,7 @@ def update_graph(isin_input_value, button_previous, button_next, button_live, bu
         button_color_year, button_color_5_years, button_color_all
     global time_step_state, n_timer_cnt, isin
     global start_time_offset
+    global auto_refresh_cnt, auto_refresh_on
 
     # serve_layout()
     df = pd.DataFrame()
@@ -652,6 +680,13 @@ def update_graph(isin_input_value, button_previous, button_next, button_live, bu
         set_radio_button_state(button_live, button_day, button_week, button_month,
                                button_4_month, button_year, button_5_year, button_all)
         time_frame_all, time_frame = set_time_frame_all()
+
+        if button_auto_refresh != auto_refresh_cnt:
+            if button_auto_refresh > auto_refresh_cnt:
+                auto_refresh_cnt = button_auto_refresh
+                auto_refresh_on = not auto_refresh_on
+            else:
+                auto_refresh_cnt = 0
 
         if button_previous != button_previous_cnt:
             if button_previous > button_previous_cnt:
@@ -871,9 +906,14 @@ def update_graph(isin_input_value, button_previous, button_next, button_live, bu
     elif radio_button_state == radio_buttons.index("All Time"):
         button_color_all = on_button_style
 
+    if auto_refresh_on:
+        button_color_auto_refresh = on_button_style_refresh
+    else:
+        button_color_auto_refresh = off_button_style_refresh
+
     return '{}'.format(instrument_output_name), '{}'.format(instrument_output_values), \
            time_step_output, figure_ohlc_line, figure_candlesticks, time_range_str, sub_time_range_str, \
-           error_message, button_color_live, button_color_day, button_color_week, button_color_month, button_color_4_months, \
+           error_message, button_color_auto_refresh, button_color_live, button_color_day, button_color_week, button_color_month, button_color_4_months, \
            button_color_year, button_color_5_years, button_color_all
 
 
