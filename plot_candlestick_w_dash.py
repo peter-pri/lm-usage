@@ -17,8 +17,8 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
 import dash
-import dash_core_components as dcc
-import dash_html_components as html
+from dash import dcc
+from dash import html
 from dash.dependencies import Input, Output
 
 from datetime import datetime
@@ -26,6 +26,8 @@ from datetime import timedelta
 import datetime
 import time
 import logging
+
+BASE_URL = "https://data.lemon.markets/v1/"
 
 logging.basicConfig(
     format='%(asctime)s,%(msecs)-6.1f [%(process)d]%(funcName)s# %(message)s',
@@ -146,7 +148,7 @@ TIMER_INTERVAL_LONG = 60 * 60 * 1000  # in milliseconds = 1 hour
 
 
 def get_instrument_name_and_values(mic, isin):
-    link_to_lm_instrument = f"https://paper-data.lemon.markets/v1/instruments/?mic={mic}&isin={isin}"
+    link_to_lm_instrument = BASE_URL + f"instruments/?mic={mic}&isin={isin}"
     result = requests.get(link_to_lm_instrument, headers={"Authorization": authorization})
     log.info(result)
     print(result)
@@ -733,7 +735,7 @@ def update_graph(isin_input_value, button_previous, button_next, button_auto_ref
 
         end_time_str = str(int((time.mktime(end_time.timetuple())) * 1000))
         log.debug("start_time:" + str(start_time) + " === " + "      end_time:" + str(end_time))
-        link_to_lm = f"https://paper-data.lemon.markets/v1/ohlc/{time_step}/?mic={mic}&isin={isin}&to={end_time_str}&from={start_time_str}&epoch=True"
+        link_to_lm = BASE_URL + f"ohlc/{time_step}/?mic={mic}&isin={isin}&to={end_time_str}&from={start_time_str}&epoch=True"
 
         end_time_all = start_time + time_frame_all + start_time_offset
         # Do no request  data from the future
@@ -773,7 +775,7 @@ def update_graph(isin_input_value, button_previous, button_next, button_auto_ref
                 end_time = datetime_today
             end_time_str = str(int((time.mktime(end_time.timetuple())) * 1000))
             log.debug("start_time:" + str(start_time) + " === " + "      end_time:" + str(end_time))
-            link_to_lm = f"https://paper-data.lemon.markets/v1/ohlc/{time_step}/?mic={mic}&isin={isin}&to={end_time_str}&from={start_time_str}&epoch=True"
+            link_to_lm = BASE_URL + f"ohlc/{time_step}/?mic={mic}&isin={isin}&to={end_time_str}&from={start_time_str}&epoch=True"
             log.debug("second link_to_lm =" + link_to_lm)
             ddf, next_link, previous_link = retrieve_data(link_to_lm)
             print("next_link = ", next_link)
